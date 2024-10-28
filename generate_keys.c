@@ -56,7 +56,7 @@ void generate_round_keys(long long key, unsigned char round_keys[16][6]) {
     }
 }
 
-int main(){
+/*int main(){
    // key example 
     // Define the key as a 64-bit long long integer
     long long key1 = 0x0123456789ABCDEF;
@@ -70,4 +70,4 @@ int main(){
         }
         printf("\n");
     } 
-}
+}*/
