@@ -346,11 +346,11 @@ int main() {
 
     // key example 
     // Define the key as a 64-bit long long integer
-    long long key = 0x0123456789ABCDEF;
+    long long key1 = 0x0123456789ABCDEF;
     unsigned char round_keys[16][6] = {0};
 
     // Generate and print round keys
-    generate_round_keys(key, round_keys);
+    generate_round_keys(key1, round_keys);
     for (int i = 0; i < 16; i++) {
         printf("Round %2d key: ", i + 1);
         for (int j = 0; j < 6; j++) {
