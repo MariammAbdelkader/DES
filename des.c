@@ -84,6 +84,24 @@ int S_BOX[8][4][16] = {
 };
 
 
+static const int expansion_table[48] = {
+    32, 1, 2, 3, 4, 5,
+    4, 5, 6, 7, 8, 9,
+    8, 9, 10, 11, 12, 13,
+    12, 13, 14, 15, 16, 17,
+    16, 17, 18, 19, 20, 21,
+    20, 21, 22, 23, 24, 25,
+    24, 25, 26, 27, 28, 29,
+    28, 29, 30, 31, 32, 1
+};
+
+static const int permutation_table[32] = {
+    16, 7, 20, 21, 29, 12, 28, 17,
+    1, 15, 23, 26, 5, 18, 31, 10,
+    2, 8, 24, 14, 32, 27, 3, 9,
+    19, 13, 30, 6, 22, 11, 4, 25
+};
+
 void apply_permutation(unsigned int high_in, unsigned int low_in, unsigned int *high_out, unsigned int *low_out, const int *permutation, int num_bits) {
     unsigned int high_result = 0;
     unsigned int low_result = 0;
@@ -180,8 +198,70 @@ uint32_t sbox_substitute(uint64_t input) {
 }
 
 
+unsigned int permute(unsigned int data) {
+    unsigned int result = 0;
+    for (int i = 0; i < 32; i++) {
+        result |= ((data >> (32 - permutation_table[i])) & 0x1) << (31 - i);
+    }
+    return result;
+}
+
+unsigned long long expand(unsigned int data) {
+    unsigned long long result = 0;
+    for (int i = 0; i < 48; i++) {
+        result |= ((data >> (32 - expansion_table[i])) & 0x1) << (47 - i);
+    }
+    return result;
+}
+
+void process_block(unsigned long long *data, unsigned long long *round_keys, int encrypt) {
+
+    unsigned int L = (*data >> 32) & 0xFFFFFFFF;
+    unsigned int R = *data & 0xFFFFFFFF;
+    
+    for (int round = 0; round < 16; round++) {
+        unsigned int temp = R;
+        
+        unsigned long long expanded = expand(R);
+        
+        // use keys in reverse order for decryption
+        expanded ^= round_keys[encrypt ? round : 15 - round];
+        
+        // S-box
+        unsigned int substituted = sbox_substitute(expanded);
+        
+        // Permutation
+        unsigned int permuted = permute(substituted);
+        
+        R = L ^ permuted;
+        L = temp;
+    }
+    
+    // Final swap
+    *data = ((unsigned long long)R << 32) | L;
+}
+
+void des_encrypt(unsigned long long *data, unsigned long long key) {
+    unsigned long long round_keys[16];
+    generate_round_keys(key, round_keys);
+    process_block(data, round_keys, 1);  // 1 for encryption
+}
+
+void des_decrypt(unsigned long long *data, unsigned long long key) {
+    unsigned long long round_keys[16];
+    generate_round_keys(key, round_keys);
+    process_block(data, round_keys, 0);  // 0 for decryption
+}
+
+
 int main() {
     unsigned char block[8] = {0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF};
+    unsigned long long key = 0x133457799BBCDFF1;
+    unsigned long long data = 0;
+    for (int i = 0; i < 8; i++) {
+        data = (data << 8) | block[i];
+    }
+    int encrypt = 1;
 
     printf("Original block: ");
     for (int i = 0; i < 8; i++) {
@@ -191,7 +271,10 @@ int main() {
 
     initial_permutation(block);
 
-  
+    if (encrypt)
+        des_encrypt(data, key);
+    else des_decrypt(data, key);
+
     final_permutation(block);
 
     uint64_t input = 0x711732E15CF0;  //48 bits input
