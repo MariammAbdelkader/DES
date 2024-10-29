@@ -102,6 +102,65 @@ static const int permutation_table[32] = {
     19, 13, 30, 6, 22, 11, 4, 25
 };
 
+// PC-1
+static const int PC1[56] = {
+    57, 49, 41, 33, 25, 17, 9, 1,
+    58, 50, 42, 34, 26, 18, 10, 2,
+    59, 51, 43, 35, 27, 19, 11, 3,
+    60, 52, 44, 36, 63, 55, 47, 39,
+    31, 23, 15, 7, 62, 54, 46, 38,
+    30, 22, 14, 6, 61, 53, 45, 37,
+    29, 21, 13, 5, 28, 20, 12, 4
+};
+// Key shifts for each round
+static const int shifts_per_round[16] = {
+    1, 1, 2, 2, 2, 2, 2, 2,
+    1, 2, 2, 2, 2, 2, 2, 1
+};
+// PC-2-box
+static const int PC2[48] = {
+    14, 17, 11, 24, 1, 5, 3, 28,
+    15, 6, 21, 10, 23, 19, 12, 4,
+    26, 8, 16, 7, 27, 20, 13, 2,
+    41, 52, 31, 37, 47, 55, 30, 40,
+    51, 45, 33, 48, 44, 49, 39, 56,
+    34, 53, 46, 42, 50, 36, 29, 32
+};
+
+// Circular Left shift function for 28-bit halves
+int left_shift_28bit(unsigned int half, int shifts) {
+    return ((half << shifts) | (half >> (28 - shifts))) & 0x0FFFFFFF;
+}
+// Get bit from key at a specific position in a 64-bit key
+int get_bit_from_key(long long key, int pos) {
+    return (key >> (63 - pos)) & 1;
+}
+// Function to generate round keys
+void generate_round_keys(long long key, unsigned char round_keys[16][6]) {
+    unsigned int C = 0, D = 0;
+    // Apply PC1 to generate the 56-bit permuted key and split into C and D
+    for (int i = 0; i < 28; i++) {
+        C |= get_bit_from_key(key, PC1[i] - 1) << (27 - i);
+        D |= get_bit_from_key(key, PC1[i + 28] - 1) << (27 - i);
+    }
+    // Generate 16 round keys
+    for (int round = 0; round < 16; round++) {
+        C = left_shift_28bit(C, shifts_per_round[round]);
+        D = left_shift_28bit(D, shifts_per_round[round]);
+        unsigned long long combined = ((unsigned long long)C << 28) | D;
+        // Apply PC2 to generate each 48-bit round key
+        for (int i = 0; i < 48; i++) {
+            int pos = PC2[i] - 1;
+            round_keys[round][i / 8] |= ((combined >> (55 - pos)) & 1) << (7 - (i % 8));
+        }
+        printf("\nround %d key:", round);
+        for(int i = 0; i < 6; i++){
+            printf("%02x", round_keys[round][i]);
+        }
+        printf("\n");
+    }
+}
+
 void apply_permutation(unsigned int high_in, unsigned int low_in, unsigned int *high_out, unsigned int *low_out, const int *permutation, int num_bits) {
     unsigned int high_result = 0;
     unsigned int low_result = 0;
@@ -179,8 +238,8 @@ void final_permutation(unsigned char *block) {
 }
 
 // S-box substitution: input: 48bits, output: 32bits
-uint32_t sbox_substitute(uint64_t input) {
-    uint32_t output = 0;
+unsigned int sbox_substitute(unsigned long long input) {
+    unsigned int output = 0;
 
     for (int i = 0; i < 8; i++) {
         // Extract the i-th 6-bit block from input
@@ -213,18 +272,22 @@ unsigned long long expand(unsigned int data) {
     return result;
 }
 
-void process_block(unsigned long long *data, unsigned long long *round_keys, int encrypt) {
+void process_block(unsigned long long *data, unsigned char round_keys[16][6], int encrypt) {
 
     unsigned int L = (*data >> 32) & 0xFFFFFFFF;
     unsigned int R = *data & 0xFFFFFFFF;
-    
     for (int round = 0; round < 16; round++) {
         unsigned int temp = R;
         
         unsigned long long expanded = expand(R);
         
         // use keys in reverse order for decryption
-        expanded ^= round_keys[encrypt ? round : 15 - round];
+        unsigned char* round_key = round_keys[encrypt ? round : 15 - round];
+        unsigned long long tmp_key = 0;
+        for(int i =0; i<6; i++){
+            tmp_key = (tmp_key<<6) | round_key[i];
+        }
+        expanded ^= tmp_key;
         
         // S-box
         unsigned int substituted = sbox_substitute(expanded);
@@ -241,13 +304,13 @@ void process_block(unsigned long long *data, unsigned long long *round_keys, int
 }
 
 void des_encrypt(unsigned long long *data, unsigned long long key) {
-    unsigned long long round_keys[16];
+    unsigned char round_keys[16][6];
     generate_round_keys(key, round_keys);
     process_block(data, round_keys, 1);  // 1 for encryption
 }
 
 void des_decrypt(unsigned long long *data, unsigned long long key) {
-    unsigned long long round_keys[16];
+    unsigned char round_keys[16][6];
     generate_round_keys(key, round_keys);
     process_block(data, round_keys, 0);  // 0 for decryption
 }
@@ -257,9 +320,7 @@ int main() {
     unsigned char block[8] = {0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF};
     unsigned long long key = 0x133457799BBCDFF1;
     unsigned long long data = 0;
-    for (int i = 0; i < 8; i++) {
-        data = (data << 8) | block[i];
-    }
+
     int encrypt = 1;
 
     printf("Original block: ");
@@ -270,15 +331,41 @@ int main() {
 
     initial_permutation(block);
 
+    printf("After initial permutation: ");
+    for (int i = 0; i < 8; i++) {
+        printf("%02X ", block[i]);
+    }
+    printf("\n");
+
+    for (int i = 0; i < 8; i++) {
+        data = (data << 8) | block[i];
+    }
+
     if (encrypt)
-        des_encrypt(data, key);
-    else des_decrypt(data, key);
+        des_encrypt(&data, key);
+    else des_decrypt(&data, key);
+
+    for (int i = 0; i < 8; i++) {
+        block[7 - i] = (data >> (i * 8)) & 0xFF;
+    }
+
+    printf("after encryption: ");
+    for (int i = 0; i < 8; i++) {
+        printf("%02X ", block[i]);
+    }
+    printf("\n");
 
     final_permutation(block);
 
-    uint64_t input = 0x711732E15CF0;  //48 bits input
-    uint32_t output = sbox_substitute(input);
-    printf("SBOX result: %X\n", output);
+    printf("final result: ");
+    for (int i = 0; i < 8; i++) {
+        printf("%02X ", block[i]);
+    }
+    printf("\n");
+
+    // uint64_t input = 0x711732E15CF0;  //48 bits input
+    // uint32_t output = sbox_substitute(input);
+    // printf("SBOX result: %X\n", output);
 
   
 
