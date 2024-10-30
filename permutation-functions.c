@@ -88,11 +88,53 @@ void generate_round_keys(uint64_t key) {
         //print_round_key(round_key, round + 1);
     }
 }
+
+// Initial Permutation table
+int ip_table[64] = {
+    58, 50, 42, 34, 26, 18, 10,  2,
+    60, 52, 44, 36, 28, 20, 12,  4,
+    62, 54, 46, 38, 30, 22, 14,  6,
+    64, 56, 48, 40, 32, 24, 16,  8,
+    57, 49, 41, 33, 25, 17,  9,  1,
+    59, 51, 43, 35, 27, 19, 11,  3,
+    61, 53, 45, 37, 29, 21, 13,  5,
+    63, 55, 47, 39, 31, 23, 15,  7
+};
+
+// Function to perform Initial Permutation (IP)
+uint64_t initial_permutation(uint64_t message) {
+    uint64_t permuted_message = 0;
+
+    for (int i = 0; i < 64; i++) {
+        int bit_position = 64 - ip_table[i];
+        uint64_t bit = (message >> bit_position) & 1;
+        permuted_message |= (bit << (63 - i));
+    }
+
+    return permuted_message;
+}
+// Function to print a 64-bit integer in binary format, grouped by 8 bits
+void print_64bit_binary(uint64_t value) {
+    for (int i = 63; i >= 0; i--) {
+        printf("%lld", (value >> i) & 1);
+        if (i % 8 == 0 && i != 0) {
+            printf(" ");
+        }
+    }
+    printf("\n");
+}
 /*
 int main() {
     uint64_t key = 0x0123456789ABCDEF;
+    uint64_t message = 0x0123456789ABCDEF;
     printf("Generating Round Keys:\n");
     generate_round_keys(key);
-    return 0;
+    printf("Original Message: 0x%016llX\n", message);
+	uint64_t permuted_message = initial_permutation(message);
+	printf("Permuted Message: 0x%016llX\n", permuted_message);
+	printf("Permuted Message in Binary: ");
+	print_64bit_binary(permuted_message);
+
+return 0;
 }
 */
