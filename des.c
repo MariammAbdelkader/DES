@@ -1,4 +1,6 @@
-#include <stdio.h>
+#include<stdio.h>
+#include<stdlib.h>
+#include<sys/stat.h>
 
 
 int initial_permutation_table[64] = {
@@ -175,7 +177,6 @@ void generate_round_keys(unsigned long long key) {
         R = left_circular_shift(R, shift_schedule[round]);
         unsigned long long LR = ((unsigned long long)L << 28) | R;
         round_keys[round] = permuted_choice_2(LR);
-        print_round_key((unsigned long long)round_keys[round], round + 1);
     }
 }
 
@@ -297,24 +298,16 @@ void process_block(unsigned long long *data,  int encrypt) {
         unsigned int temp = R;
         
         unsigned long long expanded = expand(R);
-        printf("round %d: after expansion: ",round);
-        print_64bit_binary(expanded);
-        printf("\n");
+
         // use keys in reverse order for decryption
         
         expanded ^= round_keys[encrypt ? round : 15 - round];
-        printf("round %d: after XOR: ",round);
-        print_64bit_binary(expanded);
-        printf("\n");
         // S-box
         unsigned int substituted = sbox_substitute(expanded);
-        printf("round %d: after sbox: %x \n",round, substituted);
         // Permutation
         unsigned int permuted = permute(substituted);
-        printf("round %d: after p: %x \n",round, permuted);
         R = L ^ permuted;
         L = temp;
-        printf("Round %d R: %x, L: %x \n",round+1, R, L);
     }
     
     // Final swap
@@ -337,42 +330,103 @@ unsigned long long hex_to_bin(char hex) {
     return value;
 }
 
-int main() {
-    unsigned char block[8];
-    unsigned long long key = 0x0123456789ABCDEF;
-    unsigned long long data = 0x56CC09E7CFDC4CEF;
-
-    int encrypt = 0;
 
 
-    data = initial_permutation(data);
-    print_64bit_binary(data);
+unsigned char* load_file(const char *fn, int *len)
+{
+	struct stat info={0};
+	int ret=stat(fn, &info);
+	if(ret)//inaccessible
+		return 0;
+	FILE *fsrc=fopen(fn, "rb");
+	if(!fsrc)//inaccessible
+		return 0;
+	unsigned char * data=(unsigned char *)malloc(info.st_size);//remember to free(data) at the end
+	if(!data)//out of memory
+	{
+		exit(1);
+		return 0;
+	}
+	size_t nread=fread(data, 1, info.st_size, fsrc);
+	fclose(fsrc);
+	*len=(int)nread;
+	return data;
+}
 
-    if (encrypt)
-        des_encrypt(&data, key);
-    else des_decrypt(&data, key);
+//Use this code to write files:
+int save_file(const char *fn, unsigned char *data, int len)
+{
+	FILE *fdst=fopen(fn, "wb");
+	if(!fdst)
+		return 0;
+	fwrite(data, 1, len, fdst);
+	fclose(fdst);
+	return 1;
+}
 
-    for (int i = 0; i < 8; i++) {
-        block[7 - i] = (data >> (i * 8)) & 0xFF;
+
+int main(int argc, char *argv[]) {
+    if (argc != 5) {
+        fprintf(stderr, "Usage: %s <keyfile> <inputfile> <outputfile>\n", argv[0]);
+        return 1;
     }
 
-    printf("after encryption: ");
-    for (int i = 0; i < 8; i++) {
-        printf("%02X ", block[i]);
+    // Load the key from a file
+    int key_len;
+    unsigned char *key_data = load_file(argv[2], &key_len);
+    if (!key_data || key_len != sizeof(unsigned long long)) {
+        fprintf(stderr, "Failed to load the key or key size is incorrect\n");
+        return 1;
     }
-    printf("\n");
 
-    data = final_permutation(data);
+    // Convert key data to unsigned long long
+    unsigned long long key = *(unsigned long long *)key_data;
+    free(key_data);
 
-    printf("final result: ");
-    print_64bit_binary(data);
-    printf("\n");
+    // Load the data from a file
+    int data_len;
+    unsigned char *data = load_file(argv[3], &data_len);
+    if (!data) {
+        fprintf(stderr, "Failed to load the data\n");
+        return 1;
+    }
 
-    // uint64_t input = 0x711732E15CF0;  //48 bits input
-    // uint32_t output = sbox_substitute(input);
-    // printf("SBOX result: %X\n", output);
+    // Ensure data length is a multiple of 8 (64 bits)
+    if (data_len % 8 != 0) {
+        fprintf(stderr, "Data length must be a multiple of 8 bytes\n");
+        free(data);
+        return 1;
+    }
 
-  
+    // Prepare to save encrypted data
+    unsigned char *encrypted_data = (unsigned char *)malloc(data_len);
+    if (!encrypted_data) {
+        fprintf(stderr, "Memory allocation for encrypted data failed\n");
+        free(data);
+        return 1;
+    }
 
+    // Encrypt each 64-bit block
+    for (int i = 0; i < data_len; i += 8) {
+        unsigned long long block = *(unsigned long long *)(data + i);
+        if(argv[1][0]=='e'){
+            des_encrypt(&block, key);
+        }else{
+            des_decrypt(&block,key);
+        }
+        *(unsigned long long *)(encrypted_data + i) = block;
+    }
+
+    // Save the encrypted data to a file
+    if (!save_file(argv[4], encrypted_data, data_len)) {
+        fprintf(stderr, "Failed to save the encrypted data\n");
+        free(data);
+        free(encrypted_data);
+        return 1;
+    }
+
+    // Cleanup
+    free(data);
+    free(encrypted_data);
     return 0;
 }
