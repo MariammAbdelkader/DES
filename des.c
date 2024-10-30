@@ -14,14 +14,15 @@ int initial_permutation_table[64] = {
 
 
 int final_permutation_table[64] = {
-    40, 8, 48, 16, 56, 24, 32, 0,
-    41, 9, 49, 17, 57, 25, 33, 1,
-    42, 10, 50, 18, 58, 26, 34, 2,
-    43, 11, 51, 19, 59, 27, 35, 3,
-    44, 12, 52, 20, 60, 28, 36, 4,
-    45, 13, 53, 21, 61, 29, 37, 5,
-    46, 14, 54, 22, 62, 30, 38, 6,
-    47, 15, 55, 23, 63, 31, 39, 7
+    40,	8,	48,	16,	56,	24,	64,	32,
+    39,	7,	47,	15,	55,	23,	63,	31,
+    38,	6,	46,	14,	54,	22,	62,	30,
+    37,	5,	45,	13,	53,	21,	61,	29,
+    36,	4,	44,	12,	52,	20,	60,	28,
+    35,	3,	43,	11,	51,	19,	59,	27,
+    34,	2,	42,	10,	50,	18,	58,	26,
+    33,	1,	41,	9,	49,	17,	57,	25
+
 };
 
 int S_BOX[8][4][16] = {
@@ -102,62 +103,79 @@ static const int permutation_table[32] = {
     19, 13, 30, 6, 22, 11, 4, 25
 };
 
-// PC-1
-static const int PC1[56] = {
-    57, 49, 41, 33, 25, 17, 9, 1,
-    58, 50, 42, 34, 26, 18, 10, 2,
-    59, 51, 43, 35, 27, 19, 11, 3,
-    60, 52, 44, 36, 63, 55, 47, 39,
-    31, 23, 15, 7, 62, 54, 46, 38,
-    30, 22, 14, 6, 61, 53, 45, 37,
-    29, 21, 13, 5, 28, 20, 12, 4
-};
-// Key shifts for each round
-static const int shifts_per_round[16] = {
-    1, 1, 2, 2, 2, 2, 2, 2,
-    1, 2, 2, 2, 2, 2, 2, 1
-};
-// PC-2-box
-static const int PC2[48] = {
-    14, 17, 11, 24, 1, 5, 3, 28,
-    15, 6, 21, 10, 23, 19, 12, 4,
-    26, 8, 16, 7, 27, 20, 13, 2,
-    41, 52, 31, 37, 47, 55, 30, 40,
-    51, 45, 33, 48, 44, 49, 39, 56,
-    34, 53, 46, 42, 50, 36, 29, 32
-};
 
-// Circular Left shift function for 28-bit halves
-int left_shift_28bit(unsigned int half, int shifts) {
+// Permuted Choice 1 function
+unsigned long long permuted_choice_1(unsigned long long key) {
+    int pc1_table[56] = {
+        57, 49, 41, 33, 25, 17, 9,
+        1, 58, 50, 42, 34, 26, 18,
+        10, 2, 59, 51, 43, 35, 27,
+        19, 11, 3, 60, 52, 44, 36,
+        63, 55, 47, 39, 31, 23, 15,
+        7, 62, 54, 46, 38, 30, 22,
+        14, 6, 61, 53, 45, 37, 29,
+        21, 13, 5, 28, 20, 12, 4
+    };
+
+    unsigned long long sub_key = 0;
+    for (int i = 0; i < 56; i++) {
+        int bit_position = 64 - pc1_table[i];
+        unsigned long long bit = (key >> bit_position) & 1;
+        sub_key |= (bit << (55 - i));
+    }
+    return sub_key;
+}
+
+int shift_schedule[16] = { 1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1 };
+
+unsigned int left_circular_shift(unsigned int half, int shifts) {
     return ((half << shifts) | (half >> (28 - shifts))) & 0x0FFFFFFF;
 }
-// Get bit from key at a specific position in a 64-bit key
-int get_bit_from_key(long long key, int pos) {
-    return (key >> (63 - pos)) & 1;
-}
-// Function to generate round keys
-void generate_round_keys(long long key, unsigned char round_keys[16][6]) {
-    unsigned int C = 0, D = 0;
-    // Apply PC1 to generate the 56-bit permuted key and split into C and D
-    for (int i = 0; i < 28; i++) {
-        C |= get_bit_from_key(key, PC1[i] - 1) << (27 - i);
-        D |= get_bit_from_key(key, PC1[i + 28] - 1) << (27 - i);
+
+int pc2_table[48] = {
+    14, 17, 11, 24, 1, 5,
+    3, 28, 15, 6, 21, 10,
+    23, 19, 12, 4, 26, 8,
+    16, 7, 27, 20, 13, 2,
+    41, 52, 31, 37, 47, 55,
+    30, 40, 51, 45, 33, 48,
+    44, 49, 39, 56, 34, 53,
+    46, 42, 50, 36, 29, 32
+};
+
+// Function to apply PC-2 and generate a 48-bit round key from CD
+unsigned long long permuted_choice_2(unsigned long long CD) {
+    unsigned long long round_key = 0;
+    for (int i = 0; i < 48; i++) {
+        int bit_position = 56 - pc2_table[i];
+        unsigned long long bit = (CD >> bit_position) & 1;
+        round_key |= (bit << (47 - i));
     }
-    // Generate 16 round keys
+    return round_key;
+}
+
+// Function to print the round key in the specified format
+void print_round_key(unsigned long long round_key, int round) {
+    printf("K%d = ", round);
+    for (int i = 47; i >= 0; i--) {
+        printf("%lld", (round_key >> i) & 1);
+        if (i % 6 == 0 && i != 0) printf(" ");
+    }
+    printf("\n");
+}
+unsigned long long round_keys[16] = {0};
+// Generate round keys with binary output for each round
+void generate_round_keys(unsigned long long key) {
+    unsigned long long subkey = permuted_choice_1(key);
+    unsigned int L = (subkey >> 28) & 0x0FFFFFFF;
+    unsigned int R = subkey & 0x0FFFFFFF;
+
     for (int round = 0; round < 16; round++) {
-        C = left_shift_28bit(C, shifts_per_round[round]);
-        D = left_shift_28bit(D, shifts_per_round[round]);
-        unsigned long long combined = ((unsigned long long)C << 28) | D;
-        // Apply PC2 to generate each 48-bit round key
-        for (int i = 0; i < 48; i++) {
-            int pos = PC2[i] - 1;
-            round_keys[round][i / 8] |= ((combined >> (55 - pos)) & 1) << (7 - (i % 8));
-        }
-        printf("\nround %d key:", round);
-        for(int i = 0; i < 6; i++){
-            printf("%02x", round_keys[round][i]);
-        }
-        printf("\n");
+        L = left_circular_shift(L, shift_schedule[round]);
+        R = left_circular_shift(R, shift_schedule[round]);
+        unsigned long long LR = ((unsigned long long)L << 28) | R;
+        round_keys[round] = permuted_choice_2(LR);
+        print_round_key((unsigned long long)round_keys[round], round + 1);
     }
 }
 
@@ -188,53 +206,52 @@ void apply_permutation(unsigned int high_in, unsigned int low_in, unsigned int *
     *low_out = low_result;
 }
 
-void initial_permutation(unsigned char *block) {
-    unsigned int high_in = (block[0] << 24) | (block[1] << 16) | (block[2] << 8) | block[3];
-    unsigned int low_in = (block[4] << 24) | (block[5] << 16) | (block[6] << 8) | block[7];
-    unsigned int high_out, low_out;
 
+// Initial Permutation table
+int ip_table[64] = {
+    58, 50, 42, 34, 26, 18, 10,  2,
+    60, 52, 44, 36, 28, 20, 12,  4,
+    62, 54, 46, 38, 30, 22, 14,  6,
+    64, 56, 48, 40, 32, 24, 16,  8,
+    57, 49, 41, 33, 25, 17,  9,  1,
+    59, 51, 43, 35, 27, 19, 11,  3,
+    61, 53, 45, 37, 29, 21, 13,  5,
+    63, 55, 47, 39, 31, 23, 15,  7
+};
 
-    apply_permutation(high_in, low_in, &high_out, &low_out, initial_permutation_table, 64);
+// Function to perform Initial Permutation (IP)
+unsigned long long initial_permutation(unsigned long long message) {
+    unsigned long long permuted_message = 0;
 
-    block[0] = (high_out >> 24) & 0xFF;
-    block[1] = (high_out >> 16) & 0xFF;
-    block[2] = (high_out >> 8) & 0xFF;
-    block[3] = high_out & 0xFF;
-    block[4] = (low_out >> 24) & 0xFF;
-    block[5] = (low_out >> 16) & 0xFF;
-    block[6] = (low_out >> 8) & 0xFF;
-    block[7] = low_out & 0xFF;
+    for (int i = 0; i < 64; i++) {
+        int bit_position = 64 - ip_table[i];
+        unsigned long long bit = (message >> bit_position) & 1;
+        permuted_message |= (bit << (63 - i));
+    }
 
-    printf("Output after initial permutation: ");
-    for (int i = 0; i < 8; i++) {
-        printf("%02X ", block[i]);
+    return permuted_message;
+}
+// Function to print a 64-bit integer in binary format, grouped by 8 bits
+void print_64bit_binary(unsigned long long value) {
+    for (int i = 63; i >= 0; i--) {
+        printf("%lld", (value >> i) & 1);
+        if (i % 8 == 0 && i != 0) {
+            printf(" ");
+        }
     }
     printf("\n");
 }
 
-void final_permutation(unsigned char *block) {
-    unsigned int high_in = (block[0] << 24) | (block[1] << 16) | (block[2] << 8) | block[3];
-    unsigned int low_in = (block[4] << 24) | (block[5] << 16) | (block[6] << 8) | block[7];
-    unsigned int high_out, low_out;
+unsigned long long final_permutation(unsigned long long message) {
+    unsigned long long permuted_message = 0;
 
-    // Apply permutation using the final_permutation_table
-    apply_permutation(high_in, low_in, &high_out, &low_out, final_permutation_table, 64);
-
-    // Store the result back in block
-    block[0] = (high_out >> 24) & 0xFF;
-    block[1] = (high_out >> 16) & 0xFF;
-    block[2] = (high_out >> 8) & 0xFF;
-    block[3] = high_out & 0xFF;
-    block[4] = (low_out >> 24) & 0xFF;
-    block[5] = (low_out >> 16) & 0xFF;
-    block[6] = (low_out >> 8) & 0xFF;
-    block[7] = low_out & 0xFF;
-
-    printf("Output after final permutation: ");
-    for (int i = 0; i < 8; i++) {
-        printf("%02X ", block[i]);
+    for (int i = 0; i < 64; i++) {
+        int bit_position = 64 - final_permutation_table[i];
+        unsigned long long bit = (message >> bit_position) & 1;
+        permuted_message |= (bit << (63 - i));
     }
-    printf("\n");
+
+    return permuted_message;
 }
 
 // S-box substitution: input: 48bits, output: 32bits
@@ -267,12 +284,12 @@ unsigned int permute(unsigned int data) {
 unsigned long long expand(unsigned int data) {
     unsigned long long result = 0;
     for (int i = 0; i < 48; i++) {
-        result |= ((data >> (32 - expansion_table[i])) & 0x1) << (47 - i);
+        result |= ((unsigned long long)(data >> (32 - expansion_table[i])) & 0x1) << (47 - i);
     }
     return result;
 }
 
-void process_block(unsigned long long *data, unsigned char round_keys[16][6], int encrypt) {
+void process_block(unsigned long long *data,  int encrypt) {
 
     unsigned int L = (*data >> 32) & 0xFFFFFFFF;
     unsigned int R = *data & 0xFFFFFFFF;
@@ -280,23 +297,24 @@ void process_block(unsigned long long *data, unsigned char round_keys[16][6], in
         unsigned int temp = R;
         
         unsigned long long expanded = expand(R);
-        
+        printf("round %d: after expansion: ",round);
+        print_64bit_binary(expanded);
+        printf("\n");
         // use keys in reverse order for decryption
-        unsigned char* round_key = round_keys[encrypt ? round : 15 - round];
-        unsigned long long tmp_key = 0;
-        for(int i =0; i<6; i++){
-            tmp_key = (tmp_key<<6) | round_key[i];
-        }
-        expanded ^= tmp_key;
         
+        expanded ^= round_keys[encrypt ? round : 15 - round];
+        printf("round %d: after XOR: ",round);
+        print_64bit_binary(expanded);
+        printf("\n");
         // S-box
         unsigned int substituted = sbox_substitute(expanded);
-        
+        printf("round %d: after sbox: %x \n",round, substituted);
         // Permutation
         unsigned int permuted = permute(substituted);
-        
+        printf("round %d: after p: %x \n",round, permuted);
         R = L ^ permuted;
         L = temp;
+        printf("Round %d R: %x, L: %x \n",round+1, R, L);
     }
     
     // Final swap
@@ -304,42 +322,31 @@ void process_block(unsigned long long *data, unsigned char round_keys[16][6], in
 }
 
 void des_encrypt(unsigned long long *data, unsigned long long key) {
-    unsigned char round_keys[16][6];
-    generate_round_keys(key, round_keys);
-    process_block(data, round_keys, 1);  // 1 for encryption
+    //unsigned long long round_keys[16];
+    generate_round_keys(key);
+    process_block(data, 1);  // 1 for encryption
 }
 
 void des_decrypt(unsigned long long *data, unsigned long long key) {
-    unsigned char round_keys[16][6];
-    generate_round_keys(key, round_keys);
-    process_block(data, round_keys, 0);  // 0 for decryption
+    generate_round_keys(key);
+    process_block(data, 0);  // 0 for decryption
 }
 
+unsigned long long hex_to_bin(char hex) {
+    int value = (hex >= '0' && hex <= '9') ? hex - '0' : hex - 'A' + 10;
+    return value;
+}
 
 int main() {
-    unsigned char block[8] = {0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF};
-    unsigned long long key = 0x133457799BBCDFF1;
-    unsigned long long data = 0;
+    unsigned char block[8];
+    unsigned long long key = 0x0123456789ABCDEF;
+    unsigned long long data = 0x56CC09E7CFDC4CEF;
 
-    int encrypt = 1;
+    int encrypt = 0;
 
-    printf("Original block: ");
-    for (int i = 0; i < 8; i++) {
-        printf("%02X ", block[i]);
-    }
-    printf("\n");
 
-    initial_permutation(block);
-
-    printf("After initial permutation: ");
-    for (int i = 0; i < 8; i++) {
-        printf("%02X ", block[i]);
-    }
-    printf("\n");
-
-    for (int i = 0; i < 8; i++) {
-        data = (data << 8) | block[i];
-    }
+    data = initial_permutation(data);
+    print_64bit_binary(data);
 
     if (encrypt)
         des_encrypt(&data, key);
@@ -355,12 +362,10 @@ int main() {
     }
     printf("\n");
 
-    final_permutation(block);
+    data = final_permutation(data);
 
     printf("final result: ");
-    for (int i = 0; i < 8; i++) {
-        printf("%02X ", block[i]);
-    }
+    print_64bit_binary(data);
     printf("\n");
 
     // uint64_t input = 0x711732E15CF0;  //48 bits input
